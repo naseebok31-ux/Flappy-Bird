@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Flappy City: Horizon</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #2c3e50; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; margin: 0 auto; }
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            width: 100%; 
+            text-align: center; 
+            color: #fff; 
+            pointer-events: none;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        .score-box {
+            background: rgba(0, 0, 0, 0.3);
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 15px;
+            border: 2px solid #fff;
+            box-shadow: 0 0 15px #f1c40f;
+        }
+        #currentScore { font-size: 48px; display: block; color: #f1c40f; }
+        #highScore { font-size: 16px; color: #00d2ff; text-transform: uppercase; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div class="score-box">
+            <span id="currentScore">0</span>
+            <span id="highScore">Best: 0</span>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreVal = document.getElementById('currentScore');
+        const bestVal = document.getElementById('highScore');
+
+        const GRAVITY = 0.22;
+        const JUMP = -4.8;
+        const PIPE_SPEED = 2.5;
+        const PIPE_GAP = 170;
+        const BIRD_X = 60;
+
+        let birdY, birdV, pipes, score, gameActive, cityX, highScore, frame;
+
+        // Colors for Time of Day
+        const themes = [
+            { sky: ['#4facfe', '#00f2fe'], city: '#2c3e50', pipe: '#2ecc71' }, // Morning
+            { sky: ['#1e3c72', '#2a5298'], city: '#1c2833', pipe: '#27ae60' }, // Noon
+            { sky: ['#ff9a9e', '#fecfef'], city: '#4a235a', pipe: '#1e8449' }, // Sunset
+            { sky: ['#232526', '#414345'], city: '#000000', pipe: '#145a32' }  // Night
+        ];
+
+        function init() {
+            canvas.width = Math.min(window.innerWidth, 450);
+            canvas.height = window.innerHeight;
+            birdY = canvas.height / 2;
+            birdV = 0;
+            pipes = [];
+            score = 0;
+            cityX = 0;
+            frame = 0;
+            gameActive = true;
+            highScore = localStorage.getItem('flappyBest') || 0;
+            updateUI();
+        }
+
+        function updateUI() {
+            scoreVal.innerText = score;
+            bestVal.innerText = `Best: ${highScore}`;
+            // Dynamic glow color based on score
+            document.querySelector('.score-box').style.boxShadow = `0 0 20px hsl(${score * 10 % 360}, 70%, 50%)`;
+        }
+
+        function spawnPipe() {
+            const minH = 80;
+            const range = canvas.height - PIPE_GAP - (minH * 2);
+            const top = Math.floor(Math.random() * range) + minH;
+            pipes.push({ x: canvas.width, top: top, passed: false });
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            frame++;
+            birdV += GRAVITY;
+            birdY += birdV;
+            cityX -= 0.8;
+            if (cityX <= -canvas.width) cityX = 0;
+
+            if (frame % 90 === 0) spawnPipe();
+
+            if (birdY > canvas.height || birdY < 0) endGame();
+
+            pipes.forEach((p, i) => {
+                p.x -= PIPE_SPEED;
+                
+                // Better Collision (Circular hit area)
+                if (BIRD_X + 15 > p.x && BIRD_X - 15 < p.x + 60) {
+                    if (birdY < p.top || birdY + 25 > p.top + PIPE_GAP) endGame();
+                }
+
+                if (!p.passed && p.x < BIRD_X) {
+                    p.passed = true;
+                    score++;
+                    updateUI();
+                }
+                if (p.x + 60 < 0) pipes.splice(i, 1);
+            });
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            // 1. Draw Background Gradient
+            let themeIdx = Math.floor(score / 10) % themes.length;
+            let theme = themes[themeIdx];
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            skyGrad.addColorStop(0, theme.sky[0]);
+            skyGrad.addColorStop(1, theme.sky[1]);
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Draw City (Parallax)
+            ctx.fillStyle = theme.city;
+            for (let i = 0; i < 5; i++) {
+                let x = (cityX + i * 180) % (canvas.width + 180);
+                ctx.fillRect(x, canvas.height - 120, 100, 120);
+                // Glowing Windows
+                ctx.fillStyle = score > 20 ? "#f1c40f" : "rgba(255,255,255,0.2)";
+                ctx.fillRect(x + 20, canvas.height - 100, 15, 15);
+                ctx.fillRect(x + 65, canvas.height - 100, 15, 15);
+                ctx.fillStyle = theme.city;
+            }
+
+            // 3. Draw Pipes with Gradient
+            pipes.forEach(p => {
+                let pGrad = ctx.createLinearGradient(p.x, 0, p.x + 60, 0);
+                pGrad.addColorStop(0, '#1e8449');
+                pGrad.addColorStop(0.5, '#2ecc71');
+                pGrad.addColorStop(1, '#145a32');
+                
+                ctx.fillStyle = pGrad;
+                // Top pipe
+                ctx.fillRect(p.x, 0, 60, p.top);
+                ctx.fillRect(p.x - 5, p.top - 25, 70, 25);
+                // Bottom pipe
+                ctx.fillRect(p.x, p.top + PIPE_GAP, 60, canvas.height);
+                ctx.fillRect(p.x - 5, p.top + PIPE_GAP, 70, 25);
+            });
+
+            // 4. Draw Bird (Realistic-ish)
+            ctx.save();
+            ctx.translate(BIRD_X, birdY);
+            ctx.rotate(Math.min(Math.PI/4, Math.max(-Math.PI/4, birdV * 0.1)));
+            
+            // Tail
+            ctx.fillStyle = "#d35400";
+            ctx.beginPath(); ctx.moveTo(-15, 0); ctx.lineTo(-25, -5); ctx.lineTo(-25, 5); ctx.fill();
+            
+            // Body
+            let birdGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, 20);
+            birdGrad.addColorStop(0, "#f1c40f");
+            birdGrad.addColorStop(1, "#f39c12");
+            ctx.fillStyle = birdGrad;
+            ctx.beginPath(); ctx.ellipse(0, 0, 20, 16, 0, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.stroke();
+
+            // Wing (Animated)
+            ctx.fillStyle = "white";
+            let wingSwing = Math.sin(frame * 0.2) * 10;
+            ctx.beginPath(); ctx.ellipse(-5, 2, 12, 8 + wingSwing/2, 0, 0, Math.PI*2); ctx.fill();
+            ctx.stroke();
+
+            // Eye & Beak
+            ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(10, -6, 6, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "black"; ctx.beginPath(); ctx.arc(12, -6, 3, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.moveTo(18, -2); ctx.lineTo(28, 2); ctx.lineTo(18, 6); ctx.fill();
+            
+            ctx.restore();
+        }
+
+        function endGame() {
+            gameActive = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('flappyBest', highScore);
+            }
+            setTimeout(() => {
+                alert(`CRASH!\nScore: ${score}\nBest: ${highScore}`);
+                init();
+                update();
+            }, 100);
+        }
+
+        function flap() { if (gameActive) birdV = JUMP; }
+
+        window.addEventListener('keydown', (e) => { if (e.code === 'Space') flap(); });
+        window.addEventListener('mousedown', flap);
+        window.addEventListener('touchstart', (e) => { flap(); e.preventDefault(); }, {passive: false});
+
+        init();
+        update();
+    </script>
+</body>
+</html>
